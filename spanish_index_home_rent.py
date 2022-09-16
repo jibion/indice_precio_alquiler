@@ -1,5 +1,6 @@
 ## Import dependencies
 import os
+from decouple import config
 import requests
 import pandas as pd
 import numpy as np
@@ -11,21 +12,21 @@ import difflib
 
 ## Configuration
 # Defining our connection variables
-username = 'user'  # replace with your username
-password = 'pwd'  # replace with your password
-ipaddress = 'localhost'  # change this to your db’s IP address
-port = 3306  # this is the standard port for MySQL, but change it to your port if needed
-dbname = 'database'  # change this to the name of your db
+username = config('USERDB') # replace with your username
+password = config('PWDDB') # replace with your password
+ipaddress = config('SERVERDB') # change this to your db’s IP address
+port = config('PORTDB') # this is the standard port for MySQL, but change it to your port if needed
+dbname = config('DB') # change this to the name of your db
 
-# A long string that contains the necessary MySQL login information
+# A long string that contains the necessary Postgres login information
 mysql_str = f'mysql+mysqlconnector://{username}:{password}@{ipaddress}:{port}/{dbname}'
-
+          
 # Create the connection
 cnx = create_engine(mysql_str)
 
-metadata = MetaData()  # stores the 'production' database's metadata
+metadata = MetaData() # stores the 'production' database's metadata
 
-inspector = inspect(cnx)  # creates a inspector element used to check if we have the tables already
+inspector = inspect(cnx) # creates a inspector element used to check if we have the tables already
 
 ## Define Table Schemas
 comunidades = Table('comunidades', metadata,
@@ -99,8 +100,8 @@ try:
     os.makedirs(source_data_path)
     print(source_data_path, 'folder created.', sep=' ')
 except:
-    print(source_data_path, 'already exists. Skipping creation.', sep=' ')
-
+    print(source_data_path, 'already exists. Skipping creation.', sep = ' ')
+    
 # check whether the file with the rent index exists or not
 source_data_file = 'bd_sistema-indices-alquiler-vivienda_2015-2020.xlsx'
 full_source_data = os.path.join(source_data_path, source_data_file)
@@ -110,7 +111,7 @@ sourceDataFileExist = os.path.exists(full_source_data)
 file_url = 'https://www.mitma.gob.es/recursos_mfom/comodin/recursos/bd_sistema-indices-alquiler-vivienda_2015-2020.xlsx'
 try:
     open(full_source_data)
-    print(full_source_data, 'already exists. Skipping download.', sep=' ')
+    print(full_source_data, 'already exists. Skipping download.', sep = ' ')
 except:
     # fetch file
     r = requests.get(file_url, stream=True)
@@ -128,11 +129,11 @@ except:
 ### Read the file with the Index Home Rent source data (by Municipalities and Provinces)
 
 # threat all as strings
-df_municipios = pd.read_excel(full_source_data, sheet_name=2, converters={'CPRO': str, 'CUMUN': str},
-                              na_values=['(NA)'], decimal=',').fillna(0)
+df_municipios = pd.read_excel(full_source_data, sheet_name=2, converters = {'CPRO': str, 'CUMUN': str},
+                   na_values=['(NA)'], decimal=',').fillna(0)
 
-df_provincias = pd.read_excel(full_source_data, sheet_name=3, converters={'CPRO': str},
-                              na_values=['(NA)'], decimal=',').fillna(0)
+df_provincias = pd.read_excel(full_source_data, sheet_name=3, converters = {'CPRO': str},
+                   na_values=['(NA)'], decimal=',').fillna(0)
 
 ### Add shortnames for provinces
 
@@ -159,24 +160,24 @@ prov_shortnames['LITPRO'] = prov_shortnames['name'].apply(
 df_provincias = pd.merge(df_provincias, prov_shortnames[['abr', 'name', 'LITPRO']], on="LITPRO", how="left")
 df_provincias['LITPRO'] = df_provincias['name']
 df_provincias.drop('name', inplace=True, axis=1)
-
-# extract all of the HTML tables from the INE page (National Staticstics Institue)
-tablesInPage = pd.read_html("https://www.ine.es/daco/daco42/codmun/cod_ccaa_provincia.htm",
-                            converters={
-                                'CODAUTO': str,
-                                'CPRO': str,
-                            })
-ccaa = tablesInPage[0].rename(columns={"CODAUTO": "CCA", "Comunidad Autónoma": "LITCA"})
-
-df_municipios = pd.merge(df_municipios, ccaa[['CCA', 'CPRO']], on="CPRO", how="left")
-df_provincias = pd.merge(df_provincias, ccaa[['CCA', 'CPRO']], on="CPRO", how="left")
+df_provincias = df_provincias.dropna()
+df_provincias = df_provincias[~df_provincias.LITPRO.str.startswith(tuple((['Araba','Bizkaia', 'Navarra', 'Gipuzkoa'])))]
 
 ### Add Comunidad Autonoma (region) to Dataframes
+# extract all of the HTML tables from the INE page (National Staticstics Institue)
+tablesInPage = pd.read_html("https://www.ine.es/daco/daco42/codmun/cod_ccaa_provincia.htm",
+                           converters={
+                               'CODAUTO': str,
+                               'CPRO': str,
+})
+ccaa = tablesInPage[0].rename(columns={"CODAUTO":"CCA", "Comunidad Autónoma":"LITCA"})
 
-
+### Create dataframes with municipalities and provinces
+df_municipios = pd.merge(df_municipios, ccaa[['CCA', 'CPRO']], on="CPRO", how="left")
+df_provincias = pd.merge(df_provincias, ccaa[['CCA', 'CPRO']], on="CPRO", how="left")
 ### Table: Comunidades Autonomas (Regions)
 
-ccaa_grouped_df = ccaa.drop_duplicates(['CCA', 'LITCA'])[['CCA', 'LITCA']].reset_index(drop=True)
+ccaa_grouped_df = ccaa.drop_duplicates(['CCA','LITCA'])[['CCA','LITCA']].reset_index(drop=True)
 ccaa_grouped_df = ccaa_grouped_df[ccaa_grouped_df['CCA'].str.len() < 3]
 
 # #### Create the table if does not exists already
@@ -218,8 +219,7 @@ else:
 
 ### Table: Municipalities
 
-municipalities_grouped_df = df_municipios.drop_duplicates(['CUMUN', 'LITMUN', 'CPRO'])[
-    ['CUMUN', 'LITMUN', 'CPRO']].reset_index(drop=True)
+municipalities_grouped_df = df_municipios.drop_duplicates(['CUMUN','LITMUN','CPRO'])[['CUMUN','LITMUN','CPRO']].reset_index(drop=True)
 
 #### Create the table if does not exists already
 
@@ -245,18 +245,18 @@ data_provincias
 
 # pivot data as needed
 data_provincias_pivot = (data_provincias
-                         .pivot_longer(
-    index=['CPRO'],
-    names_to=('.value', 'type', 'year'),
-    names_pattern=r"(\S+)(\S{2})_(\d+)",
-    names_transform={'year': int})
-                         .assign(year=lambda df: df.year + 2000)
-                         )
+.pivot_longer(
+    index = ['CPRO'],
+    names_to = ('.value', 'type', 'year'), 
+    names_pattern = r"(\S+)(\S{2})_(\d+)",
+    names_transform = {'year': int})
+.assign(year = lambda df: df.year + 2000)
+)
 data_provincias_pivot
 
 data_provincias_pivot.columns = ['cpro', 'type', 'year', 'n_obs', 'rent_sqm_median', 'rent_sqm_p25', 'rent_sqm_p75',
-                                 'rent_total_median', 'rent_total_p25', 'rent_total_p75',
-                                 'size_sqm_median', 'size_sqm_p25', 'size_sqm_p75']
+                'rent_total_median', 'rent_total_p25', 'rent_total_p75',
+                'size_sqm_median', 'size_sqm_p25', 'size_sqm_p75']
 
 # keep only rows where there is data in all rows and there is info for price
 data_provincias_pivot = data_provincias_pivot.dropna()
@@ -285,17 +285,17 @@ data_municipios = df_municipios.drop(['CPRO', 'LITPRO', 'LITMUN', 'CCA'], axis=1
 
 # pivot data as needed
 data_municipios_pivot = (data_municipios
-                         .pivot_longer(
-    index=['CUMUN'],
-    names_to=('.value', 'type', 'year'),
-    names_pattern=r"(\S+)(\S{2})_(\d+)",
-    names_transform={'year': int})
-                         .assign(year=lambda df: df.year + 2000)
-                         )
+.pivot_longer(
+    index = ['CUMUN'],
+    names_to = ('.value', 'type', 'year'), 
+    names_pattern = r"(\S+)(\S{2})_(\d+)",
+    names_transform = {'year': int})
+.assign(year = lambda df: df.year + 2000)
+)
 
 data_municipios_pivot.columns = ['cumun', 'type', 'year', 'n_obs', 'rent_sqm_median', 'rent_sqm_p25', 'rent_sqm_p75',
-                                 'rent_total_median', 'rent_total_p25', 'rent_total_p75',
-                                 'size_sqm_median', 'size_sqm_p25', 'size_sqm_p75']
+                'rent_total_median', 'rent_total_p25', 'rent_total_p75',
+                'size_sqm_median', 'size_sqm_p25', 'size_sqm_p75']
 
 # keep only rows where there is data in all rows and there is info for price
 data_municipios_pivot = data_municipios_pivot.dropna()

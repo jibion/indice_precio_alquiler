@@ -3,3 +3,10 @@
 
 # ignore ALL files in the Jupyter Checkpoints directory
 .ipynb_checkpoints/
+
+# ignore config file
+.env
+
+# ignore ideas
+.idea
+
